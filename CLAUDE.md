@@ -49,7 +49,7 @@ implementation rule in its Appendix A, Appendix A prevails.
 - Wait for the author's approval. Approval applies to the explained task within the agreed
   scope; a change of scope needs new approval.
 - Every new task starts on a new branch from the current `origin/main`: `git fetch origin`,
-  then `git switch -c claude/<issue>-description origin/main`.
+  then `git switch --no-track -c claude/<issue>-description origin/main`.
 
 **During the work**
 - Work in 1–3 steps at a time.
