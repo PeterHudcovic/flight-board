@@ -10,10 +10,11 @@ resource "google_storage_bucket" "tfstate" {
     enabled = true
   }
 
-  # Keep the 10 newest noncurrent versions of every state file.
+  # Keep the live version plus the 10 newest noncurrent versions of every state file.
+  # num_newer_versions counts the live version too, so 11 newer versions = 10 kept old ones.
   lifecycle_rule {
     condition {
-      num_newer_versions = 10
+      num_newer_versions = 11
       with_state         = "ARCHIVED"
     }
     action {

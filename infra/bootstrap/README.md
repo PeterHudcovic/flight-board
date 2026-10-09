@@ -6,7 +6,7 @@ must exist before the main infrastructure (`infra/terraform`) and GitHub Actions
 | Resource | Name |
 |---|---|
 | Google APIs | see `apis.tf` (never disabled on destroy) |
-| State bucket | `flight-board-prg-2610-tfstate` (versioning, 10 old versions kept) |
+| State bucket | `flight-board-prg-2610-tfstate` (versioning; the current version plus 10 older versions are kept) |
 | Artifact Registry | `flight-board` (Docker, `europe-west3`; keeps the 10 newest versions, deletes untagged after 7 days) |
 | Workload Identity Federation | pool `github`, provider `github-actions` (only this repository, by numeric ID) |
 | Service accounts | `fb-tf-plan`, `fb-deploy`, `fb-nodes` (roles: `docs/contract.md` section 5) |
@@ -60,14 +60,39 @@ it after the apply.
 
 The `gcs` backend cannot point to a bucket that does not exist yet, so the first apply uses local
 state. A follow-up PR adds `backend.tf` (bucket `flight-board-prg-2610-tfstate`, prefix
-`bootstrap`); the author then runs:
+`bootstrap`); the author then runs these steps:
 
-```
-terraform -chdir=<repo>\infra\bootstrap init -migrate-state
-```
+1. Migrate the state (answer `yes` when Terraform asks to copy the existing state):
 
-After a successful migration the local `terraform.tfstate` and `terraform.tfstate.backup` are
-deleted from disk.
+   ```
+   terraform -chdir=<repo>\infra\bootstrap init -migrate-state
+   ```
+
+2. Verify that Terraform now reads the state from the bucket. The list must contain the
+   resources from the apply (bucket, repository, pool, provider, service accounts, budget):
+
+   ```
+   terraform -chdir=<repo>\infra\bootstrap state list
+   ```
+
+3. Verify that the state object exists in the bucket (expected: `default.tfstate`):
+
+   ```
+   gcloud storage ls gs://flight-board-prg-2610-tfstate/bootstrap/
+   ```
+
+4. Only when steps 2 and 3 succeeded, delete the local state files. Terraform does not delete
+   them, and the backup contains the full previous state in plain text:
+
+   ```
+   Remove-Item -LiteralPath '<repo>\infra\bootstrap\terraform.tfstate', '<repo>\infra\bootstrap\terraform.tfstate.backup' -ErrorAction SilentlyContinue
+   ```
+
+5. Check that both files are gone (expected: `False` twice):
+
+   ```
+   Test-Path -LiteralPath '<repo>\infra\bootstrap\terraform.tfstate', '<repo>\infra\bootstrap\terraform.tfstate.backup'
+   ```
 
 ## Final cleanup after the demo
 
