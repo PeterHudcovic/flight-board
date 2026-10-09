@@ -22,7 +22,18 @@ account that is project Owner and Billing Account Administrator. Agents never ru
 
 `<repo>` below is the absolute path of the author's main checkout.
 
-## Steps
+## Steps (first setup)
+
+These steps describe the first setup with local state. The state now lives in the bucket
+(`backend.tf`); for later changes only `init`, `plan` and `apply` against the bucket are needed.
+
+0. Enable the two APIs that Terraform itself needs before it can enable the others. Without
+   them the first apply fails with `SERVICE_DISABLED` (the provider sends the project as quota
+   project because of `user_project_override`):
+
+   ```
+   gcloud services enable cloudresourcemanager.googleapis.com serviceusage.googleapis.com --project flight-board-prg-2610
+   ```
 
 1. Check the Terraform version (minimum 1.16.0):
 
@@ -58,9 +69,9 @@ it after the apply.
 
 ## Migrate the state to the bucket
 
-The `gcs` backend cannot point to a bucket that does not exist yet, so the first apply uses local
-state. A follow-up PR adds `backend.tf` (bucket `flight-board-prg-2610-tfstate`, prefix
-`bootstrap`); the author then runs these steps:
+The `gcs` backend cannot point to a bucket that does not exist yet, so the first apply used local
+state. `backend.tf` (bucket `flight-board-prg-2610-tfstate`, prefix `bootstrap`) was added after
+the first apply; the author then runs these steps once:
 
 1. Migrate the state (answer `yes` when Terraform asks to copy the existing state):
 
@@ -93,6 +104,10 @@ state. A follow-up PR adds `backend.tf` (bucket `flight-board-prg-2610-tfstate`,
    ```
    Test-Path -LiteralPath '<repo>\infra\bootstrap\terraform.tfstate', '<repo>\infra\bootstrap\terraform.tfstate.backup'
    ```
+
+A setup in a new project (new project ID, new bucket name) starts with `backend.tf` removed
+locally, runs the first apply with local state, then restores `backend.tf` with the new bucket
+name and migrates as above.
 
 ## Final cleanup after the demo
 
