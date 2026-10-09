@@ -25,8 +25,8 @@ flight-board/
 ├── app/
 │   ├── backend/         Spring Boot (fetch, validation, API, admin)
 │   └── frontend/        React + TypeScript, nginx
-├── infra/bootstrap/     state bucket, WIF, Artifact Registry (persistent)
-├── infra/terraform/     VPC, GKE, NAT, DNS endpoint, IP, budget
+├── infra/bootstrap/     APIs, state bucket, WIF, Artifact Registry, service accounts, budget
+├── infra/terraform/     VPC, GKE, NAT, DNS endpoint, IP
 ├── k8s/flight-board/    Helm chart (app, frontend, values, PDB)
 ├── .github/workflows/   pr.yml (tests + plan), deploy.yml (build + helm)
 └── docs/                specification, contract.md, runbook, cleanup

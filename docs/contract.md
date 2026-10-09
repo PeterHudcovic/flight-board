@@ -103,12 +103,17 @@ Container-native load balancing (NEG) with an own BackendConfig per Service:
 
 | Account | Roles | Used by |
 |---|---|---|
-| `fb-tf-plan@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/viewer` (project), `roles/storage.objectUser` (state bucket, for the state lock), `roles/billing.viewer` (billing account, for the budget) | `pr.yml`: `terraform plan` |
+| `fb-tf-plan@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/viewer` (project), `roles/storage.objectUser` (state bucket, for the state lock) | `pr.yml`: `terraform plan` |
 | `fb-deploy@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/artifactregistry.writer` (repository `flight-board`), `roles/container.viewer` (project; includes `container.clusters.connect` for the DNS endpoint) | `deploy.yml`: push images, `helm upgrade` |
 | `fb-nodes@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/container.defaultNodeServiceAccount` (project), `roles/artifactregistry.reader` (repository `flight-board`) | GKE nodes |
 
 - Nobody else gets a service account. `terraform apply` is run only by the author with the
   author's own account.
+- The billing budget (50/90/100 %, e-mail to billing account admins) is created in
+  `infra/bootstrap` by the author, who is Billing Account Administrator. The main Terraform
+  (`infra/terraform`) has no budget, so `fb-tf-plan` needs no billing role.
+- The service accounts, their roles and the Workload Identity Federation are created in
+  `infra/bootstrap`.
 - Application pods do not call GCP APIs, so there is no Workload Identity binding for pods.
 
 ### Workload Identity Federation
