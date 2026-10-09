@@ -414,11 +414,19 @@ Invented example of one departure (structure only):
 
 **Batch validation**
 - `{"departures": []}` is a valid empty batch (success, replaces the board).
-- Missing `departures`, invalid JSON, or a departure without `number` or
-  `movement.scheduledTime.local` (or with an unparsable time) rejects the whole batch; the last
-  good board stays.
+- An invalid flight is a departure without `number` or without a parsable
+  `movement.scheduledTime.local`.
+- An invalid flight is skipped and logged (run ID, reason); the valid flights are published.
+- The whole batch is rejected only when:
+  - the JSON is invalid, or
+  - `departures` is missing, or
+  - more than half of the departures are invalid (`skipped * 2 > total`).
+
+  The last good board then stays and the run is recorded as failed.
+- Each run records the number of skipped flights in `fetch_runs` (field `skippedCount`, next to the
+  flight count).
 - Optional fields (`revisedTime`, `terminal`, `checkInDesk`, `airport.iata`) may be missing; this
-  never rejects the batch.
+  never makes a flight invalid.
 
 **Data handling**
 - Real responses are never committed. Tests use only invented data like the example above.
