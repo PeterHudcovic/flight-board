@@ -1,0 +1,59 @@
+# Java / Maven
+target/
+*.class
+*.log
+hs_err_pid*
+*.hprof
+*.jks
+*.keystore
+*.p12
+*.pfx
+.mvn/wrapper/*
+!.mvn/wrapper/maven-wrapper.properties
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+.npm/
+
+# Terraform (.terraform.lock.hcl is committed)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+# Plans are saved only as *.tfplan in tfplans/
+*.tfplan
+tfplans/
+tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# IDE and OS
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-sa.json
+credentials.json
