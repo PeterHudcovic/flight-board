@@ -25,15 +25,15 @@ Common values used below:
   | `/` | `flight-board-frontend` | 80 → container 8080 |
 
 - Admin (`/admin/*`, port 8082) and Actuator (port 8081) are never routed publicly: port 8081
-  and 8082 are not in any Service, and only `/api` reaches the backend.
+  and 8082 are not in any Service, and only `/api` reaches the backend. `/readyz` on the backend
+  port 8080 is therefore not public either (the Ingress sends `/readyz` to the frontend).
 - HTTP is disabled on the load balancer: annotation `kubernetes.io/ingress.allow-http: "false"`.
   Cloudflare (Full strict) connects to the origin over HTTPS only.
 - TLS: Cloudflare Origin certificate in Secret `flight-board-tls` (type `kubernetes.io/tls`),
   created manually by the author; referenced in `spec.tls` of the Ingress.
 - Firewall for load balancer health checks: rule `flight-board-allow-lb-hc` in VPC
-  `flight-board-vpc`, source ranges `35.191.0.0/16` and `130.211.0.0/22`, allow `tcp:8081`,
-  target tag `flight-board-node`. The GKE Ingress controller opens only the serving ports; port
-  8081 is needed because the backend health check does not use the serving port (section 4).
+  `flight-board-vpc`, source ranges `35.191.0.0/16` and `130.211.0.0/22`, allow `tcp:8080`,
+  target tag `flight-board-node`. Both load balancer health checks use port 8080 (section 4).
 - Local Docker Compose has no Ingress: the frontend nginx container proxies `/api/` to
   `http://backend:8080`. In GKE the Ingress does the routing and nginx only serves static files.
 
@@ -49,7 +49,7 @@ Common values used below:
 
 | Container | Port | Bind address | Purpose | In a Service |
 |---|---|---|---|---|
-| backend | 8080 | `0.0.0.0` | public API `/api/*` | yes |
+| backend | 8080 | `0.0.0.0` | public API `/api/*`, internal `GET /readyz` | yes |
 | backend | 8081 | `0.0.0.0` | Actuator, only the `health` endpoint exposed | no |
 | backend | 8082 | `127.0.0.1` | admin `POST /admin/pause`, `/admin/resume`, `/admin/fetch-now` | no |
 | frontend (nginx, non-root) | 8080 | `0.0.0.0` | static SPA (Single Page Application) and `GET /healthz` | yes |
@@ -61,16 +61,19 @@ Probes (backend):
 |---|---|---|
 | startup | `GET :8081/actuator/health/liveness`, `periodSeconds 5`, `failureThreshold 30` | `livenessState` |
 | liveness | `GET :8081/actuator/health/liveness`, `periodSeconds 10`, `failureThreshold 3` | `livenessState` only, no MongoDB |
-| readiness | `GET :8081/actuator/health/readiness`, `periodSeconds 10`, `failureThreshold 3` | `readinessState`, `mongo` |
+| readiness | `GET :8080/readyz`, `periodSeconds 10`, `failureThreshold 3` | `readinessState`, `mongo` |
 
 - AeroDataBox is in no health group: a source outage never restarts or unreadies a pod.
 - Frontend: liveness and readiness `GET :8080/healthz` (static 200 from nginx).
-- Probes never use the admin port. Port 8081 binds to `0.0.0.0` because the kubelet and the load
-  balancer cannot reach `127.0.0.1` inside the pod.
+- Readiness runs on the main port 8080, so a broken API listener makes the pod unready even when
+  the Actuator server on 8081 still answers. Liveness and startup stay on 8081 without MongoDB.
+- Probes never use the admin port. Port 8081 binds to `0.0.0.0` because the kubelet cannot reach
+  `127.0.0.1` inside the pod.
 - Spring properties: `server.port=8080`, `management.server.port=8081`,
   `management.endpoints.web.exposure.include=health`,
   `management.endpoint.health.probes.enabled=true`,
-  `management.endpoint.health.group.readiness.include=readinessState,mongo`.
+  `management.endpoint.health.group.readiness.include=readinessState,mongo`,
+  `management.endpoint.health.group.readiness.additional-path=server:/readyz`.
 - Admin access: `kubectl port-forward -n flight-board deploy/flight-board-backend 8082:8082`
   (k9s: Shift+F), then `POST http://127.0.0.1:8082/admin/...`.
 - Acceptance test (Codex, backend integration test): `POST /admin/pause` returns 404 on port 8080
@@ -83,7 +86,7 @@ Container-native load balancing (NEG) with an own BackendConfig per Service:
 
 | BackendConfig | Request path | Port | Interval / timeout | Healthy / unhealthy threshold |
 |---|---|---|---|---|
-| `flight-board-backend` | `/actuator/health/readiness` | 8081 | 15 s / 5 s | 1 / 2 |
+| `flight-board-backend` | `/readyz` | 8080 | 15 s / 5 s | 1 / 2 |
 | `flight-board-frontend` | `/healthz` | 8080 | 15 s / 5 s | 1 / 2 |
 
 - Both use `type: HTTP`.
@@ -201,6 +204,28 @@ PodDisruptionBudgets (all in namespace `flight-board`):
 - The operator and the replica set are installed once by the author, not by the application
   deploy (spec chapter 13).
 
+### Application user
+
+Part of `k8s/mongodb/mongodbcommunity.yaml`:
+
+```yaml
+users:
+  - name: flightboard-app
+    db: admin                     # authentication database
+    passwordSecretRef:
+      name: flight-board-mongodb-app-password
+    roles:
+      - name: readWrite
+        db: flightboard
+    scramCredentialsSecretName: flight-board-mongodb-app-scram
+```
+
+- The generated `connectionString.standard` contains `admin` in the URI path (authentication
+  database). The application database is selected separately with
+  `FLIGHTBOARD_MONGODB_DATABASE=flightboard` → `spring.data.mongodb.database`.
+- Acceptance check (Codex): with this restricted user, collection initialization, the TTL
+  (Time To Live) index on `fetch_runs` and transactional publishing work on `flightboard`.
+
 ### Install order
 
 1. CRDs and operator: `helm install mongodb-kubernetes mongodb/mongodb-kubernetes --version
@@ -236,7 +261,7 @@ PodDisruptionBudgets (all in namespace `flight-board`):
 | `MongoDBCommunity` resource and replica set | `flight-board-mongodb` |
 | Database | `flightboard` |
 | Collections | `fetch_control`, `fetch_runs`, `board_current` |
-| Application DB user | `flightboard-app`, role `readWrite` on `flightboard` |
+| Application DB user | `flightboard-app`, authenticated in `admin`, role `readWrite` on `flightboard` |
 | GKE cluster | `flight-board` |
 | VPC / subnet | `flight-board-vpc` / `flight-board-subnet` |
 | Cloud Router / Cloud NAT | `flight-board-router` / `flight-board-nat` |
@@ -256,11 +281,14 @@ PodDisruptionBudgets (all in namespace `flight-board`):
 
 ### ConfigMap `flight-board-config`
 
-Environment variables with prefix `FLIGHTBOARD_` map to Spring properties `flightboard.*`.
+The variable names are the binding interface between Helm and the application. The application
+maps each of them explicitly to its Spring property (Spring's relaxed binding does not turn
+`FLIGHTBOARD_FETCH_CHECK_INTERVAL` into `flightboard.fetch.check-interval` automatically).
 
 | Variable | GKE value | Meaning |
 |---|---|---|
 | `FLIGHTBOARD_SOURCE` | `aerodatabox` | `stub` or `aerodatabox` (see below) |
+| `FLIGHTBOARD_MONGODB_DATABASE` | `flightboard` | maps to `spring.data.mongodb.database` |
 | `FLIGHTBOARD_AERODATABOX_BASE_URL` | `https://aerodatabox.p.rapidapi.com` | source base URL |
 | `FLIGHTBOARD_AERODATABOX_HOST` | `aerodatabox.p.rapidapi.com` | value of header `X-RapidAPI-Host` |
 | `FLIGHTBOARD_FETCH_INTERVAL` | `PT30M` | time between fetches |
@@ -288,10 +316,14 @@ Environment variables with prefix `FLIGHTBOARD_` map to Spring properties `fligh
 ### Source modes and quota
 
 - `FLIGHTBOARD_SOURCE=stub` is the default (also when the variable is missing). The stub returns
-  invented flights in the format of section 8 and uses no quota. Local Docker Compose and all
-  tests use the stub. Codex implements the stub.
-- `FLIGHTBOARD_SOURCE=aerodatabox` must be set explicitly. Only the GKE deployment sets it, so
-  only GKE calls the real API.
+  invented flights in the format of section 8, uses no quota and needs no API key. Local Docker
+  Compose uses the stub. Codex implements the stub.
+- `FLIGHTBOARD_SOURCE=aerodatabox` must be set explicitly. Only the GKE deployment sets it with
+  the real base URL and key, so only GKE calls the real API.
+- Tests of the real HTTP adapter select `aerodatabox` with a loopback base URL of a local HTTP
+  simulator (e.g. WireMock) and a dummy key. They verify the request (path, query, RapidAPI
+  headers) and the handling of 200, 429, 500, timeout and invalid JSON. Tests never contact the
+  provider and never use quota.
 - Quota (RapidAPI Basic plan, 400 units per month): the environment runs about 90 hours and is
   then deleted. 90 h × 2 fetches per hour = 180 calls × 2 units = 360 units, leaving 40 units
   (about 20 manual Fetch now). A longer run or a shorter interval needs a bigger plan.
@@ -326,7 +358,7 @@ Root object `{"departures": [ ... ]}`. Fields used by the board:
 | `movement.revisedTime.local` | string | usually present, often equal to scheduled |
 | `movement.runwayTime.local` | string | only for departed flights; not displayed |
 | `movement.airport.iata` | string | destination airport; may be missing |
-| `movement.airport.name` | string | destination name; always present |
+| `movement.airport.name` | string | destination name; may be `Unknown` |
 | `movement.terminal` | string | `"1"` or `"2"`; may be missing |
 | `movement.checkInDesk` | string | free text; may be missing or invalid |
 | `number` | string | contains a space |
@@ -371,8 +403,11 @@ Invented example of one departure (structure only):
   otherwise empty. Missing `revisedTime` → empty.
 
 **Destination**
-- `movement.airport.name` in upper case.
-- If `movement.airport.iata` is missing (e.g. name `Unknown`), the destination is empty.
+- `movement.airport.name` in upper case, independent of `iata`.
+- If the name is missing, blank or `Unknown` (case-insensitive), show `movement.airport.iata`.
+- If neither is usable, the destination is empty.
+- Invented examples: `{"name": "Exampleville"}` (no `iata`) → `EXAMPLEVILLE`;
+  `{"iata": "AAA", "name": "Unknown"}` → `AAA`; `{"name": "Unknown"}` → empty.
 
 **Flight**
 - `number` with all spaces removed: `"ZZ 1234"` → `"ZZ1234"`.
@@ -414,19 +449,17 @@ Invented example of one departure (structure only):
 
 **Batch validation**
 - `{"departures": []}` is a valid empty batch (success, replaces the board).
-- An invalid flight is a departure without `number` or without a parsable
-  `movement.scheduledTime.local`.
-- An invalid flight is skipped and logged (run ID, reason); the valid flights are published.
-- The whole batch is rejected only when:
-  - the JSON is invalid, or
-  - `departures` is missing, or
-  - more than half of the departures are invalid (`skipped * 2 > total`).
-
-  The last good board then stays and the run is recorded as failed.
-- Each run records the number of skipped flights in `fetch_runs` (field `skippedCount`, next to the
-  flight count).
-- Optional fields (`revisedTime`, `terminal`, `checkInDesk`, `airport.iata`) may be missing; this
-  never makes a flight invalid.
+- Only a complete, validated batch is published (spec chapter 7).
+- The whole batch is rejected when any of these holds:
+  - the response is not valid JSON;
+  - `departures` is missing, `null` or not an array (`{"departures": null}` is rejected);
+  - an element of `departures` is not an object;
+  - a departure has no `number`, or `number` is not a non-blank string;
+  - a departure has no `movement.scheduledTime.local`, or it cannot be parsed.
+- On rejection the last good board stays unchanged and the run is recorded in `fetch_runs` as
+  an error with the reason (and the index of the first invalid departure).
+- Optional fields (`revisedTime`, `terminal`, `checkInDesk`, `airport.iata`, `airport.name`)
+  may be missing; this never rejects the batch.
 
 **Data handling**
 - Real responses are never committed. Tests use only invented data like the example above.
