@@ -48,13 +48,16 @@ implementation rule in its Appendix A, Appendix A prevails.
 - Explain the purpose, which files will change and how they relate to the rest of the project.
 - Wait for the author's approval. Approval applies to the explained task within the agreed
   scope; a change of scope needs new approval.
-- Update the branch from main first: `git fetch origin` and `git rebase origin/main`.
+- Every new task starts on a new branch from the current `origin/main`: `git fetch origin`,
+  then `git switch -c claude/<issue>-description origin/main`.
 
 **During the work**
 - Work in 1–3 steps at a time.
 - Write abbreviations with the full name in parentheses, e.g. PDB (PodDisruptionBudget).
 - Commands on one line with absolute paths.
 - When showing an edited file to the author, give the complete content, not fragments.
+- If `main` changes while the PR is open, update the branch with `git merge origin/main` and a
+  normal `git push`.
 
 **After the change**
 - Show the result and how to verify it (command, k9s, URL).
@@ -71,6 +74,7 @@ implementation rule in its Appendix A, Appendix A prevails.
 
 - No secrets in code, config files, logs or PRs (API keys, passwords, certificates, tfvars,
   tfstate). Secrets live in Kubernetes Secrets or the author's password manager.
+- Only synthetic test data goes into the repository.
 - One task = one GitHub issue = one branch = one PR.
 - Every PR uses `.github/pull_request_template.md`: What, Why, How to test and
   Explanation for the author.
@@ -82,6 +86,7 @@ implementation rule in its Appendix A, Appendix A prevails.
 ### Never
 
 - `git push --force` (including `--force-with-lease`).
+- `git rebase` of a branch that is already pushed.
 - `gh pr merge`.
 - Direct push to `main`.
 - `terraform apply` (and `terraform destroy`). Allowed: `terraform fmt`, `validate`, `plan`.
@@ -95,6 +100,12 @@ Prometheus, Grafana, e-mail alerts, arrivals, NetworkPolicy.
 
 - Windows 10, Windows PowerShell 5.1, Windows Terminal.
 - Java runs locally through the Maven wrapper (`mvnw.cmd`); Maven is not installed.
+- PowerShell does not run scripts from the current directory without a path, so `mvnw.cmd`
+  is always started with its full path and the call operator `&`, e.g.
+  `& '<worktree>\app\backend\mvnw.cmd' verify`.
+  `<worktree>` is the agent's worktree directory (`flight-board-claude`). Files in the repository
+  never contain personal absolute paths; in the chat the agent always gives the author the
+  full absolute path for the author's computer.
 - Tools: Sublime Merge (git), k9s (cluster), GitHub web (PRs and review).
 - Commands for the author must work in PowerShell 5.1 (no `&&`, no bash syntax).
 
@@ -102,9 +113,12 @@ Prometheus, Grafana, e-mail alerts, arrivals, NetworkPolicy.
 
 TODO: added once `docker-compose.yml` and the CI workflows exist.
 
-- Backend: `mvnw.cmd verify` in `app/backend`.
+- Backend: `& '<worktree>\app\backend\mvnw.cmd' verify`.
 - Frontend: `npm test`, `npx tsc --noEmit`, `npm run build` in `app/frontend`.
 - Infrastructure: `terraform fmt -check`, `terraform validate`, `terraform plan`.
+- A saved Terraform plan is always written as `*.tfplan` into the `tfplans/` directory, e.g.
+  `terraform plan -out=tfplans/main.tfplan`. Both are ignored by git; a plan file can contain
+  secrets and is never committed.
 - Tests never use the real AeroDataBox quota.
 
 ## References

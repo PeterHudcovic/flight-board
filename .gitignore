@@ -3,6 +3,11 @@ target/
 *.class
 *.log
 hs_err_pid*
+*.hprof
+*.jks
+*.keystore
+*.p12
+*.pfx
 .mvn/wrapper/*
 !.mvn/wrapper/maven-wrapper.properties
 !.mvn/wrapper/maven-wrapper.jar
@@ -12,6 +17,7 @@ node_modules/
 dist/
 build/
 coverage/
+*.tsbuildinfo
 npm-debug.log*
 .npm/
 
@@ -21,7 +27,9 @@ npm-debug.log*
 *.tfstate.*
 *.tfvars
 *.tfvars.json
+# Plans are saved only as *.tfplan in tfplans/
 *.tfplan
+tfplans/
 tfplan
 crash.log
 crash.*.log
