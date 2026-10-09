@@ -48,11 +48,22 @@ public final class AeroDataBoxSource implements FlightSource {
 
     @Override
     public String fetch() throws SourceException {
+        return fetch(properties.fetch().runTimeout());
+    }
+
+    @Override
+    public String fetch(Duration remaining) throws SourceException {
         if (Thread.currentThread().isInterrupted()) {
             throw new SourceException(SourceException.Kind.INTERRUPTED, "Source request interrupted", null);
         }
-        Duration timeout = properties.fetch().runTimeout();
+        Duration timeout = remaining.compareTo(properties.fetch().runTimeout()) < 0
+                ? remaining : properties.fetch().runTimeout();
+        if (timeout.isZero() || timeout.isNegative()) {
+            throw new SourceException(SourceException.Kind.TIMEOUT, "Source request timed out", null);
+        }
         HttpGet request = new HttpGet(requestUri());
+        request.setConfig(RequestConfig.custom().setConnectionRequestTimeout(Timeout.of(timeout))
+                .setResponseTimeout(Timeout.of(timeout)).build());
         request.setHeader("X-RapidAPI-Key", properties.aerodatabox().apiKey());
         request.setHeader("X-RapidAPI-Host", properties.aerodatabox().host());
         request.setHeader("Accept", "application/json");
