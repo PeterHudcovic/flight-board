@@ -1,40 +1,45 @@
-# Flight Board backend - part 1 of 3
+# Flight Board backend - part 2 of 3
 
-This module implements the application foundation, the two source modes and complete-batch
-validation from `docs/contract.md`. It uses Java 25, Spring Boot 3.5.16, Maven 3.9.11 through
-Apache Maven Wrapper 3.3.4, and WireMock 3.13.2 for HTTP tests.
+This module implements sources, complete-batch validation, coordinated fetching and MongoDB
+persistence from `docs/contract.md` and specification Appendix A1. It uses Java 25, Spring Boot
+3.5.16, Maven 3.9.11 through Apache Maven Wrapper 3.3.4, WireMock 3.13.2, and the Spring Boot
+dependency-managed MongoDB Java driver 5.5.2 and Testcontainers 1.21.4.
 
-Part 2 adds MongoDB persistence, coordinated fetching and transactional publication. Part 3 adds
-the public API, Actuator, the isolated admin listener and the Dockerfile. The part 1 application
-creates and validates its configuration and source beans; it does not schedule fetches or open
-HTTP listeners. Creating the real-source bean does not make an API request.
+Part 3 adds the public API, Actuator, the isolated admin listener and the Dockerfile. This part
+runs the fetch scheduler as a non-web application with MongoDB. Creating the real-source bean
+does not make an API request; only a successfully claimed scheduled run calls a source.
 
 ## Build and verify
 
-Java 25 must be on `PATH` (or selected by `JAVA_HOME`). No globally installed Maven or Docker
-is needed for part 1. Replace `<backend>` with the absolute path to this directory. PowerShell
-5.1 commands use an explicit wrapper path and an explicit Maven project file:
+Java 25 must be on `PATH` (or selected by `JAVA_HOME`), and Docker Desktop must be running
+with Linux containers for MongoDB integration tests. No globally installed Maven is needed.
+Replace `<backend>` with the absolute path to this directory. PowerShell 5.1 commands use an explicit wrapper path and an explicit Maven project file:
 
 ```powershell
 & '<backend>\mvnw.cmd' -f '<backend>\pom.xml' --batch-mode --no-transfer-progress verify
 ```
 
 Expected result: `BUILD SUCCESS`, with all configuration, stub, WireMock and validation tests
-passing. The wrapper downloads its pinned Maven version and checks its SHA-256 checksum.
+passing, including an authenticated `mongo:8.0.32` single-member replica set `rs0`. The test
+application user authenticates against `admin` but has only `readWrite` on `flightboard`. The
+wrapper downloads its pinned Maven version and checks its SHA-256 checksum.
 The first build downloads dependencies. `target/` and `.maven-user-home/` are ignored.
 
 For a cache contained entirely in this module, set `MAVEN_USER_HOME` to the absolute
 `<backend>\.maven-user-home` path and pass
 `-Dmaven.repo.local=<backend>\.maven-user-home\repository` to Maven.
 
-The packaged foundation can be started with:
+Set `SPRING_DATA_MONGODB_URI` in the process environment to an authenticated replica-set URI
+provided by the operator Secret (or by the local MongoDB setup). Never put it in a tracked file
+or a command committed to the repository. The packaged application can then be started with:
 
 ```powershell
 java -jar '<backend>\target\flight-board-backend-0.1.0-SNAPSHOT.jar'
 ```
 
-At this stage it starts the non-web application context and exits normally. Runtime endpoint
-acceptance tests will be added with part 3.
+At this stage it stays running with a scheduler, initializes MongoDB and immediately checks
+whether a fetch is due. It requires a reachable writable replica set; it does not create a
+MongoDB server. Runtime endpoint acceptance tests will be added with part 3.
 
 ## Configuration
 
@@ -70,8 +75,8 @@ the API key.
 | `SERVER_PORT` | `8080` | `server.port` |
 | `MANAGEMENT_SERVER_PORT` | `8081` | `management.server.port` |
 
-`SPRING_DATA_MONGODB_URI` is the native Spring environment variable reserved for part 2, provided
-by the operator-generated Secret in GKE. Selecting `spring.data.mongodb.database=flightboard`
+`SPRING_DATA_MONGODB_URI` is the native Spring environment variable used by the MongoDB client,
+provided by the operator-generated Secret in GKE. Selecting `spring.data.mongodb.database=flightboard`
 does not change authentication against `admin` in that URI. The port properties reserve the
 contract values; listener implementation is part 3.
 
@@ -87,7 +92,7 @@ a failure category and, when available, an HTTP status. It does not persist or p
   configuration, sets `direction=Departure`, `withLeg=false`, `withCodeshared=false` and
   `withCargo=false`, and sends the RapidAPI key and host headers. Only HTTP 200 is accepted.
 - Apache HttpClient has automatic retries and redirects explicitly disabled. The response is limited to 2 MiB;
-  the configured run timeout bounds both headers and body download. Interruption cancels the
+  the remaining whole-run budget bounds both headers and body download. Interruption cancels the
   in-flight request, and invalid UTF-8 is rejected. Exceptions do not echo provider bodies,
   headers or keys.
 - Tests configure the actual HTTP adapter with a loopback WireMock URL and a dummy key. They
@@ -96,8 +101,8 @@ a failure category and, when available, an HTTP status. It does not persist or p
 
 ## Validation and mapping
 
-`BatchValidator.validate(json, runId)` returns an immutable `ValidatedBatch` for publication in
-part 2. A valid empty `departures` array succeeds. A malformed document, invalid root structure,
+`BatchValidator.validate(json, runId)` returns an immutable `ValidatedBatch` for publication.
+A valid empty `departures` array succeeds. A malformed document, invalid root structure,
 non-object departure, blank/non-string number or invalid required scheduled timestamp rejects
 the entire batch with a safe reason and the first invalid departure's index. Trailing JSON and
 duplicate object keys are also rejected.
@@ -123,8 +128,56 @@ Mapping follows contract section 8:
   terminal match; an empty terminal configuration includes all terminals. The sorted result is
   limited by `FLIGHTBOARD_BOARD_MAX_FLIGHTS` (default 36).
 
-The batch retains `sourceFlightCount` separately from the selected board count. It does not yet
-set `publishedAt`, freshness or run records; those belong to the coordinated publish operation.
+The batch retains `sourceFlightCount` separately from the selected board count. The coordinated
+publish operation assigns `publishedAt` and records the run result.
+
+## Coordinated fetching and persistence
+
+- Startup creates `fetch_control`, `fetch_runs` and `board_current`, then inserts the fixed
+  control document only if absent. Concurrent startup and restart preserve pause state,
+  schedule, lock ownership and the monotonically increasing counter.
+- Every check (default one minute, also once at startup) makes one conditional
+  `findOneAndUpdate` against the fixed control ID `control`. It requires an unpaused, due
+  schedule and a free or expired lock. Server time sets the next schedule, a unique run ID,
+  lock expiry and run deadline, and increments `fetchSeq`. The claim and its `RUNNING` run
+  record commit together, before the single source request.
+- The default two-minute budget begins before the claim and includes MongoDB operations,
+  HTTP headers/body, complete-batch validation, publication and all transaction retries.
+  A monotonic deadline and caller watchdog cancel overdue work. HTTP receives only the
+  remaining budget; MongoDB uses CSOT (Client-Side Operation Timeout). Deadline checks
+  between stages and server-side publication fences prevent a late worker from publishing.
+- The source is called outside transactions, exactly once for each successfully claimed
+  run. Publication retries reuse the downloaded, validated batch. A driver-managed
+  transaction shares one remaining timeout across its body and every commit retry;
+  transient body retries stop after three attempts. Unknown commit-result retries stop
+  when that same remaining budget expires and never repeat the source request.
+- Publication conditionally releases the matching unexpired owner and writes the whole
+  board at fixed ID `current`. An absent board is inserted; an existing board is replaced
+  only by a higher sequence. Any failed conditional write explicitly aborts the transaction.
+  The `SUCCESS` run record commits atomically with the board and lock release. A valid empty
+  batch replaces the board with an empty flight list.
+- Failed runs preserve the last board, record a safe reason/status/index and release only
+  their own lock. After the work deadline, failure bookkeeping has a separate two-second
+  best-effort budget which cannot publish data. If the process crashes or MongoDB is
+  unavailable, recovery waits for both lock expiry and the next scheduled time. A crashed
+  run retains its `RUNNING` diagnostic record until expiration. A committed `SUCCESS` is
+  never overwritten by ambiguous-commit failure bookkeeping.
+- `fetch_runs` has a seven-day TTL (Time To Live) index on `startedAt`. Records contain
+  run ID, sequence, timestamps, result, available HTTP status, source and board counts on
+  success, and a sanitized error on failure. Raw source JSON and credentials are not stored.
+- Reads omit a board older than the configured maximum age (default 12 hours), even before
+  physical cleanup. A daily job deletes expired boards; publishing after deletion works.
+- Persistence methods for pause, resume and fetch-now are ready for the part 3 admin listener.
+  Pause blocks new claims and lets an active run finish; resume preserves `nextRunAt`.
+  Fetch-now atomically sets `nextRunAt` to server time only when not paused or locked, and
+  returns a rejection reason otherwise. The next scheduler check performs the fetch.
+
+Integration tests use invented data and ephemeral credentials, a restricted application user,
+concurrent clients and MongoDB failpoints. They cover initial and repeated publication, empty
+batches, startup races, pause/resume, crash recovery, stale workers, sequence fencing, explicit
+transaction abort, transient/ambiguous-commit retry, database delays, whole-run deadlines and
+a complete Spring application startup with the default stub source. WireMock tests cover the
+HTTP adapter without consuming real provider quota.
 
 ## Data and ownership
 

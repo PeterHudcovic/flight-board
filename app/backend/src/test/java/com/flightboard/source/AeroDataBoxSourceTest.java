@@ -94,6 +94,18 @@ class AeroDataBoxSourceTest {
     }
 
     @Test
+    void usesOnlyTheRemainingWholeRunBudgetForHttp() throws Exception {
+        server.stubFor(get(urlPathEqualTo(PATH)).willReturn(okJson(batch()).withFixedDelay(1500)));
+        try (var source = new AeroDataBoxSource(httpProperties(server.baseUrl(), Duration.ofSeconds(10)))) {
+            long started = System.nanoTime();
+            var exception = catchThrowableOfType(SourceException.class, () -> source.fetch(Duration.ofMillis(300)));
+            assertThat(exception.kind()).isEqualTo(SourceException.Kind.TIMEOUT);
+            assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(1));
+        }
+        server.verify(1, getRequestedFor(urlPathEqualTo(PATH)));
+    }
+
+    @Test
     void timeoutAlsoCoversAResponseBodyThatStallsAfterHeaders() throws Exception {
         server.stubFor(get(urlPathEqualTo(PATH)).willReturn(okJson(" ".repeat(1000) + batch())
                 .withChunkedDribbleDelay(10, 2000)));

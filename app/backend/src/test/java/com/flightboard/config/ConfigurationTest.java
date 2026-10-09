@@ -2,7 +2,6 @@ package com.flightboard.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.flightboard.FlightBoardApplication;
 import com.flightboard.source.AeroDataBoxSource;
 import com.flightboard.source.FlightSource;
 import com.flightboard.source.StubFlightSource;
@@ -14,11 +13,17 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Configuration;
 
 class ConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withInitializer(new ConfigDataApplicationContextInitializer())
-            .withUserConfiguration(FlightBoardApplication.class);
+            .withUserConfiguration(SourceConfiguration.class, PropertyBinding.class);
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableConfigurationProperties(FlightBoardProperties.class)
+    static class PropertyBinding {}
 
     @Test
     void defaultsUseStubWithoutAKeyAndMatchTheContract() {
