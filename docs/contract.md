@@ -103,7 +103,7 @@ Container-native load balancing (NEG) with an own BackendConfig per Service:
 
 | Account | Roles | Used by |
 |---|---|---|
-| `fb-tf-plan@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/viewer` (project), `roles/storage.objectUser` (state bucket, for the state lock) | `pr.yml`: `terraform plan` |
+| `fb-tf-plan@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/viewer` (project), `roles/storage.objectUser` (state bucket, for the state lock) | `ci.yml`: `terraform plan` |
 | `fb-deploy@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/artifactregistry.writer` (repository `flight-board`), `roles/container.viewer` (project; includes `container.clusters.connect` for the DNS endpoint) | `deploy.yml`: push images, `helm upgrade` |
 | `fb-nodes@flight-board-prg-2610.iam.gserviceaccount.com` | `roles/container.defaultNodeServiceAccount` (project), `roles/artifactregistry.reader` (repository `flight-board`) | GKE nodes |
 
@@ -468,3 +468,86 @@ Invented example of one departure (structure only):
 
 **Data handling**
 - Real responses are never committed. Tests use only invented data like the example above.
+
+## 9. API
+
+Public endpoints on port 8080 under `/api` (implemented in `app/backend`, PR #16). All responses
+are JSON (UTF-8) with `Cache-Control: no-store`. Timestamps are ISO-8601 UTC instants
+(e.g. `"2030-01-15T21:40:00Z"`). Fields marked "nullable" are present with value `null`.
+
+### `GET /api/departures`
+
+`200` when a valid board exists (also when it is empty):
+
+```json
+{
+  "flights": [
+    {
+      "number": "ZZ1234",
+      "scheduledAt": "2030-01-15T21:40:00Z",
+      "scheduled": "22:40",
+      "expected": "22:55",
+      "destination": "EXAMPLEVILLE",
+      "checkIn": "100-102",
+      "bagDrop": "",
+      "remark": "Boarding",
+      "remarkColor": "YELLOW",
+      "terminal": "2"
+    }
+  ],
+  "publishedAt": "2030-01-15T21:30:00Z",
+  "dataAgeSeconds": 600,
+  "stale": false,
+  "runId": "00000000-0000-4000-8000-000000000000"
+}
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `flights` | array | at most 36, already filtered and sorted (section 8); `[]` for a valid empty batch |
+| `flights[].number` | string | flight number without spaces |
+| `flights[].scheduledAt` | instant | full scheduled time, used for ordering |
+| `flights[].scheduled` | string | `HH:mm` in Europe/Prague |
+| `flights[].expected` | string | `HH:mm` or `""` when equal to scheduled or unknown |
+| `flights[].destination` | string | upper case, may be `""` |
+| `flights[].checkIn` | string | normalized desk or `""` |
+| `flights[].bagDrop` | string | always `""` |
+| `flights[].remark` | string | `Boarding`, `Gate closed`, `Delayed`, `Cancelled` or `""` |
+| `flights[].remarkColor` | string | `WHITE`, `YELLOW` or `RED` |
+| `flights[].terminal` | string | `"1"`, `"2"` or `""` |
+| `publishedAt` | instant | time of the successful publication (data age is measured from it) |
+| `dataAgeSeconds` | number | seconds since `publishedAt` |
+| `stale` | boolean | `true` when the age reaches `FLIGHTBOARD_BOARD_STALE_AFTER` |
+| `runId` | string | ID of the run that published the board |
+
+### `GET /api/status`
+
+`200`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `version` | string | `FLIGHTBOARD_VERSION` = git SHA of the image; checked by `deploy.yml` |
+| `paused` | boolean | fetching paused by admin |
+| `nextRunAt` | instant, nullable | next planned fetch |
+| `publishedAt` | instant, nullable | `null` when there is no valid board |
+| `dataAgeSeconds` | number, nullable | `null` when there is no valid board |
+| `stale` | boolean | `true` also when there is no valid board |
+| `lastSuccessfulRun` | object, nullable | `runId`, `startedAt`, `finishedAt`, `httpStatus` (nullable), `sourceFlightCount`, `flightCount` |
+| `lastError` | object, nullable | `runId`, `finishedAt`, `code`, `message`, `httpStatus` (nullable), `departureIndex` (nullable) |
+
+`lastError.code` is one of `RUN_TIMEOUT`, `INVALID_BATCH`, `PUBLICATION_REJECTED`, `RETRY_LIMIT`,
+`PUBLISH_UNCERTAIN`, `DATABASE`, `INTERNAL`, `SOURCE_<kind>` or `RUN_FAILED`; `message` is a
+fixed text, never an exception, a key or source data (Appendix A6).
+
+### Errors
+
+Error responses have the shape `{"code": "...", "message": "..."}`:
+
+| Status | `code` | When | Text on the board |
+|---|---|---|---|
+| `503` | `NO_DATA` | `/api/departures` without a valid board (new database or older than `FLIGHTBOARD_BOARD_MAX_AGE`) | "Flight information is temporarily unavailable" |
+| `503` | `DATABASE_UNAVAILABLE` | MongoDB unreachable or not yet initialized | last local copy + "Connection lost", otherwise unavailable |
+
+When the backend is unready, the load balancer itself may answer `502`/`503` without a JSON body;
+the frontend treats every non-`200` response without a valid body like "API unavailable"
+(Appendix A6).
