@@ -105,14 +105,31 @@ jobs:
         with:
           version: v4.1.3
 
-      # A2: never replace a newer deployment with an older commit.
+      # A2: never replace a newer deployment with an older commit. Fail closed: only a confirmed
+      # "release: not found" (first install) may continue without a deployed version.
       - name: Check deployed version
         if: steps.gate.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          deployed=$(helm get values "$RELEASE" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '.image.tag // empty' || true)
-          echo "Deployed: ${deployed:-none}, new: $SHA"
-          if [ -z "$deployed" ] || [ "$deployed" = "$SHA" ]; then exit 0; fi
+          if ! helm status "$RELEASE" -n "$NAMESPACE" > /dev/null 2> status.err; then
+            if grep -q 'release: not found' status.err; then
+              echo "Release $RELEASE not found: first install of $SHA."
+              exit 0
+            fi
+            echo "::error::Cannot read release $RELEASE; not deploying."
+            cat status.err
+            exit 1
+          fi
+          if ! deployed=$(helm get values "$RELEASE" -n "$NAMESPACE" -o json | jq -er '.image.tag'); then
+            echo "::error::Cannot read image.tag of the deployed release; not deploying."
+            exit 1
+          fi
+          if ! [[ "$deployed" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Deployed image.tag '$deployed' is not a git SHA; not deploying."
+            exit 1
+          fi
+          echo "Deployed: $deployed, new: $SHA"
+          if [ "$deployed" = "$SHA" ]; then exit 0; fi
           if ! git cat-file -e "$deployed^{commit}" 2>/dev/null; then
             echo "::error::Deployed commit $deployed is not in the history of this repository."
             exit 1
