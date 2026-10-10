@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.npm-cache/
+.playwright/
+playwright-report/
+test-results/
+.tmp/
+coverage/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example

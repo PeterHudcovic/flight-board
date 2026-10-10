@@ -1,0 +1,21 @@
+# Values for helm chart mongodb/mongodb-kubernetes 1.13.0 (docs/contract.md section 6).
+# Installed once by the author:
+#   helm install mongodb-kubernetes mongodb/mongodb-kubernetes --version 1.13.0 -n flight-board -f operator-values.yaml
+
+operator:
+  # Only the MongoDBCommunity reconciler is needed; the operator watches its own namespace.
+  watchedResources:
+    - mongodbcommunity
+  # The chart default (500m CPU) is oversized for 2-vCPU nodes; the operator is mostly idle.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 200Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+community:
+  mongodb:
+    # quay.io/mongodb/mongodb-community-server:<version>-ubi9 (chart default ubi8 is being phased out).
+    imageType: ubi9

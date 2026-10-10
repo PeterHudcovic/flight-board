@@ -55,6 +55,14 @@ Common values used below:
 | frontend (nginx, non-root) | 8080 | `0.0.0.0` | static SPA (Single Page Application) and `GET /healthz` | yes |
 | MongoDB | 27017 | – | replica set | headless Service created by the operator |
 
+Container runtime (both images, enforced by the Helm chart `k8s/flight-board`):
+
+- The image runs as a numeric non-root user (`USER` with a UID, e.g. `10001`), because the pod
+  sets `runAsNonRoot: true`.
+- The root filesystem is read-only; only `/tmp` is writable (`emptyDir`). The backend writes
+  temporary files and nginx its pid and temp files only under `/tmp`.
+- No Linux capabilities, no privilege escalation, no service account token in the pod.
+
 Probes (backend):
 
 | Probe | Request | Health group content |
@@ -222,7 +230,7 @@ users:
     roles:
       - name: readWrite
         db: flightboard
-    scramCredentialsSecretName: flight-board-mongodb-app-scram
+    scramCredentialsSecretName: flight-board-mongodb-app   # operator appends -scram-credentials
 ```
 
 - The generated `connectionString.standard` contains `admin` in the URI path (authentication
