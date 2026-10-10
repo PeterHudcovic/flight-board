@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flight-board
+  labels:
+    {{- include "flight-board.labels" . | nindent 4 }}
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.global-static-ip-name: {{ .Values.ingress.staticIpName }}
+    # Cloudflare (Full strict) reaches the origin only over HTTPS.
+    kubernetes.io/ingress.allow-http: "false"
+spec:
+  tls:
+    - hosts:
+        - {{ required "ingress.host is required" .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          # Only /api reaches the backend; /readyz, Actuator and admin are never routed publicly.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: flight-board-backend
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flight-board-frontend
+                port:
+                  name: http

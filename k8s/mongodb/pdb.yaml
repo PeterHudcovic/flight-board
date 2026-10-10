@@ -1,0 +1,13 @@
+# A planned drain may take at most one of the three members (docs/contract.md section 6).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: flight-board-mongodb
+  namespace: flight-board
+  labels:
+    app.kubernetes.io/part-of: flight-board
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flight-board-mongodb
