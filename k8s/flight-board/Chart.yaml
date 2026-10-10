@@ -1,0 +1,7 @@
+apiVersion: v2
+name: flight-board
+description: Flight Board application (backend, frontend, Ingress) per docs/contract.md
+type: application
+version: 0.1.0
+# The application version is the image tag (git SHA), set with --set image.tag=<sha>.
+appVersion: "0.1.0"

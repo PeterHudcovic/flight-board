@@ -1,0 +1,49 @@
+# Namespace rights of the GitHub Actions deploy account (docs/contract.md section 5).
+# The GCP role roles/container.viewer only allows connecting and reading; all writes come from here.
+# No rights on MongoDBCommunity or the operator: MongoDB is managed only by the author.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: flight-board-deployer
+  namespace: flight-board
+  labels:
+    app.kubernetes.io/part-of: flight-board
+rules:
+  - apiGroups: [""]
+    # secrets: Helm stores its release history in Secrets.
+    resources: ["services", "configmaps", "secrets", "serviceaccounts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cloud.google.com"]
+    resources: ["backendconfigs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: flight-board-deployer
+  namespace: flight-board
+  labels:
+    app.kubernetes.io/part-of: flight-board
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: flight-board-deployer
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: fb-deploy@flight-board-prg-2610.iam.gserviceaccount.com

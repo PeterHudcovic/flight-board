@@ -1,0 +1,144 @@
+{{- $name := "flight-board-backend" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "flight-board.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+spec:
+  replicas: {{ .Values.backend.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        {{- include "flight-board.labels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ $name }}
+      annotations:
+        # A changed ConfigMap value replaces the pods on helm upgrade.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "flight-board.podSecurity" . | nindent 8 }}
+      # One replica per node.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $name }}
+      containers:
+        - name: backend
+          image: "{{ .Values.image.registry }}/backend:{{ include "flight-board.tag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Port 8082 (admin) listens only on 127.0.0.1 and is reached with kubectl port-forward;
+          # it is deliberately not declared here and not in any Service.
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 8081
+          envFrom:
+            - configMapRef:
+                name: flight-board-config
+          env:
+            - name: FLIGHTBOARD_VERSION
+              value: {{ include "flight-board.tag" . | quote }}
+            - name: AERODATABOX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.aerodatabox.name }}
+                  key: {{ .Values.secrets.aerodatabox.key }}
+            - name: SPRING_DATA_MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.mongodbConnection.name }}
+                  key: {{ .Values.secrets.mongodbConnection.key }}
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ .Values.backend.javaToolOptions | quote }}
+          # docs/contract.md section 3: liveness/startup without MongoDB on 8081,
+          # readiness with MongoDB on the main port 8080.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+          securityContext:
+            {{- include "flight-board.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "flight-board.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ $name }}
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "{{ $name }}"}'
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $name }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "flight-board.labels" . | nindent 4 }}
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /readyz
+    port: 8080
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "flight-board.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $name }}
