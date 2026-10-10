@@ -13,7 +13,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Configuration(proxyBeanMethods = false)
 public class PersistenceConfiguration {
-    @Bean(initMethod = "initialize")
+    @Bean
     public MongoFetchStore fetchStore(MongoClient client, @Value("${spring.data.mongodb.database}") String database,
                                      FlightBoardProperties properties, Clock clock) {
         return new MongoFetchStore(client, database, properties, clock);

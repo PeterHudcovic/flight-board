@@ -43,6 +43,7 @@ public final class MongoFetchStore implements FetchStore {
     private final MongoDatabase database;
     private final FlightBoardProperties properties;
     private final Clock clock;
+    private volatile boolean initialized;
 
     public MongoFetchStore(MongoClient client, String databaseName, FlightBoardProperties properties, Clock clock) {
         if (databaseName == null || databaseName.isBlank()) {
@@ -78,6 +79,16 @@ public final class MongoFetchStore implements FetchStore {
             }
             return null;
         });
+        initialized = true;
+    }
+
+    public boolean initialized() { return initialized; }
+
+    /** Readiness has a bounded primary read and never exposes a driver exception. */
+    public boolean ready() {
+        if (!initialized) { return false; }
+        try { return readControl() != null; }
+        catch (RuntimeException exception) { return false; }
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.flightboard.config;
 
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.flightboard.source.AeroDataBoxSource;
@@ -25,6 +26,7 @@ public class SourceConfiguration {
     @ConditionalOnMissingBean
     public ObjectMapper objectMapper() {
         return JsonMapper.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .addModule(new JavaTimeModule()).build();
     }
 
