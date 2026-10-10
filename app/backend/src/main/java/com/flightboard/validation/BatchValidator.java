@@ -99,10 +99,7 @@ public final class BatchValidator {
             }
         }
         JsonNode airport = movement.path("airport");
-        String destination = text(airport.path("name")).strip();
-        if (destination.isBlank() || "Unknown".equalsIgnoreCase(destination)) {
-            destination = text(airport.path("iata")).strip();
-        }
+        String destination = DestinationNames.resolve(text(airport.path("iata")), text(airport.path("name")));
         String status = text(departure.path("status"));
         String remark = switch (status) {
             case "Boarding" -> "Boarding";
@@ -122,7 +119,7 @@ public final class BatchValidator {
         };
         return new BoardFlight(parsed.number(), parsed.scheduled().toInstant(),
                 DISPLAY_TIME.format(parsed.scheduled().atZoneSameInstant(board.timezone())), expected,
-                destination.toUpperCase(Locale.ROOT), checkIn(text(movement.path("checkInDesk"))), "",
+                destination, checkIn(text(movement.path("checkInDesk"))), "",
                 remark, color, text(movement.path("terminal")));
     }
 

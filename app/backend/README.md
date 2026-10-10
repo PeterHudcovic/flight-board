@@ -122,8 +122,11 @@ Mapping follows contract section 8:
   Display uses the configured timezone; sorting uses full instants and flight number, including
   midnight and the repeated autumn daylight-saving hour.
 - Revised time is displayed only when its instant differs from the scheduled instant.
-- A meaningful destination name is uppercased independently of IATA; missing/blank/unknown names
-  fall back to the IATA code. No values are invented for absent destinations.
+- Known destination IATA codes use the small immutable city-name map in `DestinationNames.java`
+  (the approved visual-polish override of the original source-name rule). Unlisted airports keep
+  their uppercased source name; missing/blank/unknown names fall back to the IATA code.
+  There is no geocoding or extra provider request, and the API shape is unchanged.
+  Overrides affect the next published batch; already persisted boards keep their original names.
 - Whitespace is removed from flight numbers. Check-in follows the specified numeric pattern;
   equal endpoints collapse to one value. Bag Drop remains empty.
 - Known statuses follow the specified text/colour mapping. Unknown or missing status stays empty

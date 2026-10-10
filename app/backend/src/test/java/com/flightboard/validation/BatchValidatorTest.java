@@ -130,6 +130,22 @@ class BatchValidatorTest {
     }
 
     @ParameterizedTest
+    @CsvSource(value = {"BVA|PARIS BEAUVAIS", "FRA|FRANKFURT", "RHO|RHODES", "KGS|KOS",
+            "PMI|PALMA DE MALLORCA", "CRL|BRUSSELS CHARLEROI", "BGY|MILAN BERGAMO",
+            "CIA|ROME CIAMPINO", "FCO|ROME", "ORY|PARIS", "CDG|PARIS", "LTN|LONDON",
+            "STN|LONDON", "LGW|LONDON", "LHR|LONDON"}, delimiter = '|')
+    void knownAirportsUseCityOverridesBeforeTheSourceName(String iata, String expected) throws Exception {
+        var departure = departure("ZZ 1234", "2030-01-01 10:00+01:00");
+        var airport = (ObjectNode) movement(departure).get("airport");
+        airport.put("iata", " " + iata.toLowerCase(Locale.ROOT) + " ").put("name", "Invented Airport Name");
+        assertThat(validator.validate(batch(departure), "city-name-run").flights().getFirst().destination())
+                .isEqualTo(expected);
+        airport.remove("name");
+        assertThat(validator.validate(batch(departure), "city-name-without-source-name-run")
+                .flights().getFirst().destination()).isEqualTo(expected);
+    }
+
+    @ParameterizedTest
     @CsvSource(value = {"100|100", "100-102|100-102", "100,102|100,102", "100,100|100",
             "100-100|100", "0430|", "100-102-104|", "A100|", "1,2,3|", "|"}, delimiter = '|')
     void checkInIsNormalizedOrLeftEmpty(String value, String expected) throws Exception {

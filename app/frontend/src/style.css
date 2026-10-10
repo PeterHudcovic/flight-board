@@ -1,48 +1,67 @@
 * { box-sizing: border-box; }
-:root { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; color: #fff; background: #2e3a40; font-synthesis: none; }
-body { margin: 0; }
-.board { position: relative; min-height: 100dvh; display: flex; flex-direction: column; }
-.board-header { background: #00aeef; min-height: 72px; padding: 10px 20px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
-h1 { grid-column: 2; margin: 0; font-size: clamp(24px, 2vw, 34px); font-weight: 400; letter-spacing: .02em; text-align: center; }
-.clock { justify-self: end; font-size: clamp(32px, 2.6vw, 44px); font-weight: 500; font-variant-numeric: tabular-nums; }
-.notice { min-height: 30px; padding: 3px 16px; font-family: sans-serif; font-size: 14px; text-align: center; background: #2e3a40; color: #fff; }
+:root { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; color: #fff; background: #090f14; font-synthesis: none; }
+body { margin: 0; padding: 8px; }
+.display-frame { height: calc(100dvh - 16px); padding: 8px; border: 1px solid #3b4852; border-radius: 14px; background: #151e25; box-shadow: 0 4px 12px #0008; }
+.board {
+  --header-height: clamp(72px, 9.6dvh, 104px);
+  --notice-height: 28px;
+  --footer-height: clamp(36px, 4.1dvh, 44px);
+  --column-height: clamp(48px, 6.2dvh, 68px);
+  position: relative; height: 100%; display: grid; background: #2e3a40; border-radius: 4px;
+  grid-template-rows: var(--header-height) var(--notice-height) minmax(0, 1fr) var(--footer-height);
+}
+.board-header { background: #00aeef; padding: 0 clamp(16px, 1.4vw, 28px); display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+h1 { margin: 0; font-size: clamp(26px, 2.5vw, 48px); font-weight: 500; letter-spacing: .015em; line-height: 1.1; }
+.clock { flex: none; font-size: clamp(36px, 3.1vw, 60px); font-weight: 500; font-variant-numeric: tabular-nums; line-height: 1; }
+.notice { padding: 4px 16px; font-family: sans-serif; font-size: 14px; line-height: 20px; text-align: center; color: #fff; }
 .notice-visible { background: #674800; color: #fff3c1; }
-.blocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 1; align-items: start; }
-.flight-block { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: clamp(16px, 1.22vw, 22px); }
-.column-0 { width: 11%; }
-.column-1 { width: 9%; }
-.column-2 { width: 24%; }
-.column-3 { width: 14%; }
-.column-4 { width: 12%; }
+.blocks { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(6px, .5vw, 10px); }
+.block-frame { min-width: 0; border: 1px solid #52616b; }
+.flight-block { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: clamp(14.4px, 1.125vw, 21.6px); line-height: 1.1; }
+.column-0 { width: 12%; }
+.column-1 { width: 10%; }
+.column-2 { width: 29%; }
+.column-3 { width: 11.5%; }
+.column-4 { width: 6.5%; }
 .column-5 { width: 13%; }
-.column-6 { width: 17%; }
+.column-6 { width: 18%; }
 thead { background: #00aeef; }
-th { height: 40px; text-align: left; font-weight: 400; font-size: .9em; white-space: nowrap; }
-td, th { padding: 0 3px; overflow: hidden; text-overflow: ellipsis; }
-.flight-row { height: max(42px, calc((100dvh - 190px) / 12)); background: #2e3a40; }
+th { height: var(--column-height); text-align: left; font-weight: 500; font-size: 1.08em; white-space: nowrap; }
+td, th { padding: 0 4px; overflow: hidden; text-overflow: ellipsis; }
+td:first-child, th:first-child { padding-left: 8px; }
+th:first-child { padding-right: 2px; }
+td:last-child, th:last-child { padding-right: 8px; }
+td:nth-child(5), th:nth-child(5) { padding-left: 2px; padding-right: 2px; }
+th:nth-child(5), th:nth-child(6) { font-size: 1em; text-align: center; }
+th:nth-child(6) { letter-spacing: -.02em; }
+td:nth-child(6) { text-align: center; }
+.compact-heading { display: block; line-height: 1.05; }
+/* Reserve 34px for the outer frame and 2px for the block borders. */
+.flight-row { height: calc((100dvh - 36px - var(--header-height) - var(--notice-height) - var(--footer-height) - var(--column-height)) / 12); background: #2e3a40; }
 .flight-row:nth-child(even) { background: #006a98; }
 td { font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .destination { text-transform: uppercase; }
+.destination-text { display: block; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .remark-red { color: #ff5555; }
 .remark-yellow { color: #ffe000; }
 .remark-white { color: #fff; }
-.board-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 42px; padding: 8px 16px; color: #c7d2d9; font-size: 16px; }
+.board-footer { display: flex; justify-content: flex-end; align-items: center; gap: 14px; padding: 0 clamp(16px, 1.4vw, 28px); color: #c7d2d9; font-size: clamp(14px, 1vw, 18px); }
+.publication { white-space: nowrap; }
 .board-footer a { color: #d2e8f4; text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 .board-footer a:focus-visible { outline: 2px solid #ffe000; outline-offset: 4px; }
 .empty-message { position: absolute; top: 45%; width: 100%; margin: 0; text-align: center; padding: 12px; font-size: 24px; }
 @media (max-width: 1279px), (max-height: 719px) {
-  .blocks { grid-template-columns: 1fr; flex: none; }
-  .flight-block { font-size: clamp(18px, 2.2vw, 26px); }
+  .display-frame { height: auto; min-height: calc(100dvh - 16px); }
+  .board { height: auto; min-height: calc(100dvh - 34px); grid-template-rows: auto var(--notice-height) auto var(--footer-height); }
+  .board-header { min-height: var(--header-height); padding-top: 12px; padding-bottom: 12px; }
+  .blocks { grid-template-columns: 1fr; }
+  .flight-block { font-size: clamp(18px, 2.2vw, 26px); height: auto; }
   .flight-row { height: 42px; }
-  .board-header { grid-template-columns: 1fr auto; gap: 12px; }
-  h1 { grid-column: 1; text-align: left; }
 }
 @media (max-width: 540px) {
   .blocks { overflow-x: auto; }
   .flight-block { min-width: 540px; }
-  .board-header { padding: 10px 12px; }
+  .board-header { gap: 12px; padding-left: 12px; padding-right: 12px; }
   h1 { font-size: 22px; }
   .clock { font-size: 28px; }
-  .board-footer { flex-wrap: wrap; }
-  .board-footer a { margin-left: auto; }
 }
