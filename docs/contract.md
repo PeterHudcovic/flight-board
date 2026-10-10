@@ -370,7 +370,7 @@ Root object `{"departures": [ ... ]}`. Fields used by the board:
 | `movement.scheduledTime.local` | string | always present |
 | `movement.revisedTime.local` | string | usually present, often equal to scheduled |
 | `movement.runwayTime.local` | string | only for departed flights; not displayed |
-| `movement.airport.iata` | string | destination airport; may be missing |
+| `movement.airport.iata` | string | destination airport; key of the override map; may be missing |
 | `movement.airport.name` | string | destination name; may be `Unknown` |
 | `movement.terminal` | string | `"1"` or `"2"`; may be missing |
 | `movement.checkInDesk` | string | free text; may be missing or invalid |
@@ -416,11 +416,24 @@ Invented example of one departure (structure only):
   otherwise empty. Missing `revisedTime` → empty.
 
 **Destination**
-- `movement.airport.name` in upper case, independent of `iata`.
-- If the name is missing, blank or `Unknown` (case-insensitive), show `movement.airport.iata`.
-- If neither is usable, the destination is empty.
+
+The first rule that gives a value wins:
+
+1. Display-name override by IATA code: `movement.airport.iata` (trimmed, upper case) is looked
+   up in the override map owned by the backend (`app/backend/.../validation/DestinationNames.java`),
+   e.g. `FCO` → `ROME`, `BGY` → `MILAN BERGAMO`. The map is the single source of the overrides;
+   adding a code is a backend change only.
+2. `movement.airport.name` in upper case, unless it is missing, blank or `Unknown`
+   (case-insensitive).
+3. `movement.airport.iata` (upper case).
+4. Empty.
+
 - Invented examples: `{"name": "Exampleville"}` (no `iata`) → `EXAMPLEVILLE`;
+  `{"iata": "AAA", "name": "Exampleville"}` (not in the map) → `EXAMPLEVILLE`;
   `{"iata": "AAA", "name": "Unknown"}` → `AAA`; `{"name": "Unknown"}` → empty.
+- The API shape does not change: `destination` stays an upper-case string (section 9).
+- Overrides apply from the next successful publication; an already published board keeps its
+  names until it is replaced.
 
 **Flight**
 - `number` with all spaces removed: `"ZZ 1234"` → `"ZZ1234"`.
