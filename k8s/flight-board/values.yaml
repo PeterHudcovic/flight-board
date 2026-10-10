@@ -1,4 +1,4 @@
-# Values follow docs/contract.md. Required at install time: image.tag and ingress.host.
+# Values follow docs/contract.md. Required at install time: image.tag.
 
 image:
   registry: europe-west3-docker.pkg.dev/flight-board-prg-2610/flight-board
@@ -26,8 +26,8 @@ frontend:
       memory: 128Mi
 
 ingress:
-  # Public domain proxied by Cloudflare (Full strict). No default on purpose.
-  host: ""
+  # Public domain proxied by Cloudflare (Full strict).
+  host: flights.peterhudcovic.tech
   staticIpName: flight-board-ip
   tlsSecretName: flight-board-tls
 

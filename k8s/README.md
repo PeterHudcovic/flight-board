@@ -107,7 +107,7 @@ Remove-Item -LiteralPath '<secrets-dir>\aerodatabox-api-key.txt'
 
 ### 6. TLS certificate
 
-Create a Cloudflare Origin certificate for the board domain and save the certificate and the
+Create a Cloudflare Origin certificate for `flights.peterhudcovic.tech` and save the certificate and the
 private key as `<secrets-dir>\origin.crt` and `<secrets-dir>\origin.key`, then:
 
 ```
@@ -129,13 +129,13 @@ kubectl apply -f <repo>\k8s\rbac\deployer.yaml
 ### 8. Application
 
 Installed by the deploy workflow (`helm upgrade --install flight-board k8s/flight-board -n
-flight-board --set image.tag=<git-sha> --set ingress.host=<domain>`) once the images exist in
-Artifact Registry. A manual install uses the same command.
+flight-board --set image.tag=<git-sha>`) once the images exist in Artifact Registry. A manual
+install uses the same command. The domain `flights.peterhudcovic.tech` is the chart default.
 
 ### 9. DNS
 
-Cloudflare A record `<domain>` → `terraform output ingress_ip` of `infra/terraform`, proxied
-(orange cloud), SSL mode Full (strict). The Google load balancer needs several minutes after the
+Cloudflare A record `flights.peterhudcovic.tech` → `terraform output ingress_ip` of
+`infra/terraform`, proxied (orange cloud), SSL mode Full (strict). The Google load balancer needs several minutes after the
 first install.
 
 ## Secrets overview
