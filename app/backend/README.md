@@ -1,12 +1,11 @@
-# Flight Board backend - part 2 of 3
+# Flight Board backend
 
-This module implements sources, complete-batch validation, coordinated fetching and MongoDB
-persistence from `docs/contract.md` and specification Appendix A1. It uses Java 25, Spring Boot
+This module implements sources, complete-batch validation, coordinated fetching, MongoDB
+persistence, the public REST API, health probes and a separate loopback admin listener from `docs/contract.md` and specification Appendix A1. It uses Java 25, Spring Boot
 3.5.16, Maven 3.9.11 through Apache Maven Wrapper 3.3.4, WireMock 3.13.2, and the Spring Boot
 dependency-managed MongoDB Java driver 5.5.2 and Testcontainers 1.21.4.
 
-Part 3 adds the public API, Actuator, the isolated admin listener and the Dockerfile. This part
-runs the fetch scheduler as a non-web application with MongoDB. Creating the real-source bean
+The same application coordinates fetching and serves the board. Creating the real-source bean
 does not make an API request; only a successfully claimed scheduled run calls a source.
 
 ## Build and verify
@@ -19,10 +18,13 @@ Replace `<backend>` with the absolute path to this directory. PowerShell 5.1 com
 & '<backend>\mvnw.cmd' -f '<backend>\pom.xml' --batch-mode --no-transfer-progress verify
 ```
 
-Expected result: `BUILD SUCCESS`, with all configuration, stub, WireMock and validation tests
-passing, including an authenticated `mongo:8.0.32` single-member replica set `rs0`. The test
+Expected result: `BUILD SUCCESS`, with all configuration, stub, WireMock, validation, persistence
+and HTTP acceptance tests passing, including an authenticated `mongo:8.0.32` single-member replica set `rs0`. The test
 application user authenticates against `admin` but has only `readWrite` on `flightboard`. The
 wrapper downloads its pinned Maven version and checks its SHA-256 checksum.
+The HTTP acceptance suite uses the actual contract ports 8080, 8081 and 8082; keep those ports
+free while running it. Tests pause MongoDB to verify initial and later outages, recovery without
+restarting, startup cleanup, isolated admin access, freshness and sanitized errors.
 The first build downloads dependencies. `target/` and `.maven-user-home/` are ignored.
 
 For a cache contained entirely in this module, set `MAVEN_USER_HOME` to the absolute
@@ -37,9 +39,11 @@ or a command committed to the repository. The packaged application can then be s
 java -jar '<backend>\target\flight-board-backend-0.1.0-SNAPSHOT.jar'
 ```
 
-At this stage it stays running with a scheduler, initializes MongoDB and immediately checks
-whether a fetch is due. It requires a reachable writable replica set; it does not create a
-MongoDB server. Runtime endpoint acceptance tests will be added with part 3.
+The HTTP listeners start even if MongoDB is unavailable. Collection/index/control initialization
+runs in the background with a bounded operation timeout and retries at the configured check
+interval. Readiness is DOWN until initialization and a control-document read succeed; liveness
+remains independent of MongoDB. Fetching resumes when MongoDB recovers. The application does
+not create a MongoDB server.
 
 ## Configuration
 
@@ -77,8 +81,8 @@ the API key.
 
 `SPRING_DATA_MONGODB_URI` is the native Spring environment variable used by the MongoDB client,
 provided by the operator-generated Secret in GKE. Selecting `spring.data.mongodb.database=flightboard`
-does not change authentication against `admin` in that URI. The port properties reserve the
-contract values; listener implementation is part 3.
+does not change authentication against `admin` in that URI. API and management listen on
+`0.0.0.0`; the separate admin server enforces exactly `127.0.0.1:8082`.
 
 ## Source boundary
 
@@ -133,7 +137,7 @@ publish operation assigns `publishedAt` and records the run result.
 
 ## Coordinated fetching and persistence
 
-- Startup creates `fetch_control`, `fetch_runs` and `board_current`, then inserts the fixed
+- Background startup initialization creates `fetch_control`, `fetch_runs` and `board_current`, then inserts the fixed
   control document only if absent. Concurrent startup and restart preserve pause state,
   schedule, lock ownership and the monotonically increasing counter.
 - Every check (default one minute, also once at startup) makes one conditional
@@ -166,8 +170,9 @@ publish operation assigns `publishedAt` and records the run result.
   run ID, sequence, timestamps, result, available HTTP status, source and board counts on
   success, and a sanitized error on failure. Raw source JSON and credentials are not stored.
 - Reads omit a board older than the configured maximum age (default 12 hours), even before
-  physical cleanup. A daily job deletes expired boards; publishing after deletion works.
-- Persistence methods for pause, resume and fetch-now are ready for the part 3 admin listener.
+  physical cleanup. Cleanup runs immediately after successful initialization (including delayed
+  database recovery), once after one minute, and then daily. Publishing after deletion works.
+- The separate admin listener uses the persistence methods for pause, resume and fetch-now.
   Pause blocks new claims and lets an active run finish; resume preserves `nextRunAt`.
   Fetch-now atomically sets `nextRunAt` to server time only when not paused or locked, and
   returns a rejection reason otherwise. The next scheduler check performs the fetch.
@@ -179,7 +184,82 @@ transaction abort, transient/ambiguous-commit retry, database delays, whole-run 
 a complete Spring application startup with the default stub source. WireMock tests cover the
 HTTP adapter without consuming real provider quota.
 
+## HTTP interface
+
+Every response under `/api`, including errors and unknown routes, sends
+`Cache-Control: no-store`. Timestamps are ISO 8601 UTC strings. Age is a nonnegative number
+of seconds since the original publication, never since the most recent API request.
+
+| Request | Response |
+|---|---|
+| `GET :8080/api/departures` | 200: `flights`, `publishedAt`, `dataAgeSeconds`, `stale`, `runId` |
+| `GET :8080/api/status` | 200: `version`, `paused`, `nextRunAt`, `publishedAt`, `dataAgeSeconds`, `stale`, `lastSuccessfulRun`, `lastError` |
+| `GET :8080/readyz` | 200 UP / 503 DOWN: readiness state and initialized MongoDB availability |
+| `GET :8081/actuator/health/liveness` | Only liveness state, no MongoDB or provider dependency |
+| `GET :8081/actuator/health/readiness` | Same health group as `/readyz` |
+
+A valid empty board is 200 with `flights: []`. An absent or expired board returns
+503 with `code: NO_DATA`. Until initialization completes, or during a database outage,
+the API returns 503 with `code: DATABASE_UNAVAILABLE`. Errors contain only a safe `code`
+and `message`. Status still succeeds when the board is absent: `publishedAt` and
+`dataAgeSeconds` are null and `stale` is true. The default stale threshold is 75 minutes;
+boards older than 12 hours are excluded before physical cleanup.
+
+`lastSuccessfulRun` is null or contains `runId`, `startedAt`, `finishedAt`, `httpStatus`,
+`sourceFlightCount` and `flightCount`. `lastError` is null or contains `runId`, `finishedAt`,
+`code`, a fixed sanitized `message`, `httpStatus` and `departureIndex`. Optional values are
+null. Persisted exception text and provider bodies are never returned. A source failure affects
+these diagnostics and board freshness only; it does not affect health probes.
+
+## Admin access
+
+Admin routes run on a separate JDK HTTP server, bound only to `127.0.0.1:8082`. They are
+not registered in either Spring MVC listener: all three return 404 on 8080 and 8081.
+Acceptance tests also attempt connections to every available non-loopback IPv4 interface and
+verify that port 8082 refuses them.
+
+| POST request | Response |
+|---|---|
+| `/admin/pause` | 200 `{ "paused": true }`; new claims stop, active work may finish |
+| `/admin/resume` | 200 `{ "paused": false }`; existing `nextRunAt` is preserved |
+| `/admin/fetch-now` | 202 `{ "accepted": true, "message": "Fetch scheduled for the next check" }` |
+
+Fetch-now sets the shared schedule atomically; it does not run an independent provider request.
+It returns 409 with `code: PAUSED` or `code: LOCKED` when rejected. Database unavailability
+returns 503 `DATABASE_UNAVAILABLE`. GET on an admin operation returns 405; unknown paths
+return 404. Admin responses also use `no-store`.
+
+In GKE, use the contract's port-forward to the backend deployment, then call the loopback URL:
+
+```powershell
+kubectl port-forward -n flight-board deploy/flight-board-backend 8082:8082
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8082/admin/pause'
+```
+
+## Container
+
+The Dockerfile builds the application with Java 25 and the pinned Maven wrapper, then runs
+only the packaged jar on the Java 25 runtime as UID/GID `10001:10001`. Installing `unzip`
+in the builder keeps the wrapper on the ZIP archive whose SHA-256 checksum is pinned for
+Windows too. The build context allowlist excludes tests, caches, build output and local
+environment files. No credentials are build arguments or image layers.
+Replace `<backend>` with the absolute module path:
+
+```powershell
+docker build --tag flight-board-backend:local '<backend>'
+docker run --rm --name flight-board-backend-local --publish 127.0.0.1:8080:8080 --publish 127.0.0.1:8081:8081 --env SPRING_DATA_MONGODB_URI --env FLIGHTBOARD_VERSION=local flight-board-backend:local
+```
+
+Set `SPRING_DATA_MONGODB_URI` in the host process environment before running the container;
+its MongoDB address must be reachable from inside the container. The default source is stub.
+Without a reachable replica set the image still starts, liveness is UP and readiness is DOWN.
+Compose wiring belongs to the separate infrastructure task.
+
+Do not publish port 8082 through Docker: a published port connects to the container's network
+interface, while admin listens only on its loopback interface. Kubernetes port-forward can
+reach pod loopback. Ports 8081 and 8082 must not be added to a Kubernetes Service or Ingress.
+
 ## Data and ownership
 
-All test data is invented. Real responses are not copied into this module. This part changes
+All test data is invented. Real responses are not copied into this module. This module changes
 only `app/backend`; frontend, Compose, Kubernetes, Terraform and workflows are separate tasks.

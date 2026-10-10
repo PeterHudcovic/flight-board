@@ -26,12 +26,29 @@ public final class FetchScheduler implements SmartLifecycle {
     public synchronized void start() {
         if (scheduler != null) { return; }
         scheduler = Executors.newScheduledThreadPool(2);
-        scheduler.scheduleAtFixedRate(coordinator::checkAsync, 0,
+        scheduler.scheduleWithFixedDelay(this::check, 0,
                 Math.max(1, properties.fetch().checkInterval().toMillis()), TimeUnit.MILLISECONDS);
-        scheduler.scheduleWithFixedDelay(() -> {
-            try { store.deleteExpiredBoard(); }
-            catch (RuntimeException exception) { LOG.warn("Expired-board cleanup unavailable"); }
-        }, 1, 1, TimeUnit.DAYS);
+        scheduler.scheduleWithFixedDelay(this::cleanup, TimeUnit.MINUTES.toMillis(1),
+                TimeUnit.DAYS.toMillis(1), TimeUnit.MILLISECONDS);
+    }
+
+    private void check() {
+        try {
+            if (!store.initialized()) {
+                store.initialize();
+                // Also clean up after delayed DB recovery, before the first source request.
+                cleanup();
+            }
+            coordinator.checkAsync();
+        } catch (RuntimeException exception) {
+            LOG.warn("Database initialization/check unavailable; retrying at the next check");
+        }
+    }
+
+    private void cleanup() {
+        if (!store.initialized()) { return; }
+        try { store.deleteExpiredBoard(); }
+        catch (RuntimeException exception) { LOG.warn("Expired-board cleanup unavailable"); }
     }
 
     @Override
