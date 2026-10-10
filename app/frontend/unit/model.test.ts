@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_AGE_MS, ageSeconds, clockText, orderedFlights, parseBoard, usable } from '../src/model';
+import { MAX_AGE_MS, ageSeconds, clockText, orderedFlights, parseBoard, publishedText, usable } from '../src/model';
 import { makeBoard, makeFlight, NOW } from './fixtures';
 describe('API/cache schema', () => {
   it('accepts the PR16 board and a valid empty board', () => {
@@ -41,5 +41,7 @@ describe('publication time and selection', () => {
   it('uses Prague time independently of the machine timezone, including DST', () => {
     expect(clockText(Date.parse('2030-01-15T23:40:05Z'))).toBe('00:40:05');
     expect(clockText(Date.parse('2030-07-15T23:40:05Z'))).toBe('01:40:05');
+    expect(publishedText('2030-01-15T22:40:00Z')).toBe('23:40');
+    expect(publishedText('2030-07-15T22:40:00Z')).toBe('00:40');
   });
 });

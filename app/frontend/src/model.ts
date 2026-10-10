@@ -73,5 +73,5 @@ export function clockText(now: number): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(now);
 }
 export function publishedText(value: string): string {
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Prague', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(Date.parse(value));
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(Date.parse(value));
 }

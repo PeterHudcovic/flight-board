@@ -6,7 +6,7 @@ test('36 slots, correct columns, colours, clock, attribution and chronological b
   const flights = Array.from({ length: 25 }, (_, index) => makeFlight(index)).reverse();
   await page.route('**/api/departures', route => route.fulfill({ json: makeBoard({ flights }) }));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'DEPARTURES FROM TERMINAL 2' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'PRAGUE AIRPORT (PRG) · DEPARTURES · TERMINAL 2' })).toBeVisible();
   await expect(page.locator('table')).toHaveCount(3);
   await expect(page.locator('tbody tr')).toHaveCount(36);
   await expect(page.locator('tbody tr').first()).toContainText('ZZ1200');

@@ -31,8 +31,14 @@ npm.cmd --prefix '<frontend>' run test:e2e
 
 Playwright starts and stops its own loopback development server on port 4173; keep it free.
 Browser tests simulate the API, check all board states, the one-second clock, cache expiration
-and recovery, 36 row slots, colours, complete time/identifier columns at 1280 x 720 and block
-wrapping at a smaller width. Screenshots are written to ignored `test-results/`.
+and recovery, 36 row slots, colours, equal row heights and complete columns without scrolling
+at 1920 x 1080 and 1280 x 720. They also verify resize/data-change font fitting and block
+wrapping at a smaller width. Deterministic Windows screenshot baselines are committed under
+`e2e/screenshots/win32/`; Playwright also attaches both previews to its test report.
+
+Run `npm.cmd --prefix '<frontend>' run test:e2e -- --update-snapshots` only when deliberately
+accepting a visual change. Review both images before committing updated baselines. Baseline
+paths include the platform; a different platform needs its own reviewed screenshots.
 
 For local development, start a backend on 8080 with the stub source, then run:
 
@@ -49,8 +55,15 @@ The board has three blocks of twelve rows. Remaining slots stay empty. Below 128
 the blocks wrap vertically. The clock uses Europe/Prague regardless of the browser timezone.
 Flights are ordered by full `scheduledAt`, then flight number, and limited to 36. Display
 fields are already mapped and validated by the backend; missing values remain empty.
-The title says `DEPARTURES FROM TERMINAL 2` only when all displayed flights confirm terminal
-2; otherwise it says `DEPARTURES`. No terminal is guessed from absent data.
+Configure the display identity in `src/boardConfig.ts`: airport name, IATA code and terminal.
+The header reads `PRAGUE AIRPORT (PRG) · DEPARTURES · TERMINAL 2`, with the clock on the right.
+The configured terminal describes the board mode and must match the backend configuration;
+it is not inferred from the current flights. Backend filtering still requires confirmed terminal 2.
+
+Destination has the widest column; Bag Drop stays present and narrow. Every name remains
+on one line. A cell can shrink its own font by up to 20% to fit, recalculated after new data,
+font loading and viewport changes. Only names still too long at that minimum use ellipsis;
+the complete name remains available in the cell title. Row heights never depend on names.
 
 Each row reads these backend fields:
 
@@ -92,8 +105,8 @@ Source strings are rendered through React as text, never as HTML.
 | Network/API failure with usable copy | Last copy and Connection lost |
 | Network/API failure without usable copy | Flight information is temporarily unavailable |
 
-The age footer measures time since publication, not a guarantee that the source information
-is current. Publication date and time use Europe/Prague. Data attribution links to AeroDataBox.
+The small footer shows `Last update HH:MM` from the original `publishedAt` in Europe/Prague,
+next to the AeroDataBox attribution link. It never substitutes the most recent API request time.
 
 ## nginx and container
 
