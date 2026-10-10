@@ -53,12 +53,6 @@ jobs:
           fi
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
-      - name: Detect frontend
-        id: frontend
-        if: steps.gate.outputs.skip != 'true'
-        run: |
-          if [ -f app/frontend/Dockerfile ]; then echo "enabled=true"; else echo "enabled=false"; fi >> "$GITHUB_OUTPUT"
-
       - id: auth
         if: steps.gate.outputs.skip != 'true'
         uses: google-github-actions/auth@v2
@@ -88,7 +82,7 @@ jobs:
           cache-to: type=gha,scope=backend,mode=max
 
       - name: Build and push frontend
-        if: steps.gate.outputs.skip != 'true' && steps.frontend.outputs.enabled == 'true'
+        if: steps.gate.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: app/frontend
@@ -130,23 +124,16 @@ jobs:
 
       - name: helm upgrade
         if: steps.gate.outputs.skip != 'true'
-        env:
-          FRONTEND: ${{ steps.frontend.outputs.enabled }}
         run: |
           helm upgrade --install "$RELEASE" k8s/flight-board -n "$NAMESPACE" \
-            --set image.tag="$SHA" --set frontend.enabled="$FRONTEND" \
-            --wait --timeout 10m
+            --set image.tag="$SHA" --wait --timeout 10m
 
       - name: Wait for rollout
         if: steps.gate.outputs.skip != 'true'
-        env:
-          FRONTEND: ${{ steps.frontend.outputs.enabled }}
         run: |
           set -euo pipefail
           kubectl rollout status deployment/flight-board-backend -n "$NAMESPACE" --timeout=5m
-          if [ "$FRONTEND" = "true" ]; then
-            kubectl rollout status deployment/flight-board-frontend -n "$NAMESPACE" --timeout=5m
-          fi
+          kubectl rollout status deployment/flight-board-frontend -n "$NAMESPACE" --timeout=5m
 
       # A7: the public status must report exactly this commit, not just HTTP 200.
       - name: Verify version through the public API
