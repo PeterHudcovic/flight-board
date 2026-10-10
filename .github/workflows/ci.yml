@@ -1,0 +1,178 @@
+# Checks for every pull request into main (spec chapter 13, Appendix A3/A7).
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Directory ownership is an agreement; this job enforces it (spec chapter 13, AGENTS.md, CLAUDE.md).
+  ownership:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.changes.outputs.backend }}
+      frontend: ${{ steps.changes.outputs.frontend }}
+      infra: ${{ steps.changes.outputs.infra }}
+      terraform: ${{ steps.changes.outputs.terraform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check branch prefix and owned paths
+        env:
+          BRANCH: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "$BASE_SHA...$HEAD_SHA" > changed.txt
+          echo "Changed files:"; cat changed.txt
+          case "$BRANCH" in
+            codex/*)
+              # Codex owns only app/ (AGENTS.md); everything else goes through a Claude Code PR.
+              forbidden=$(grep -v '^app/' changed.txt || true)
+              ;;
+            claude/*)
+              forbidden=$(grep '^app/' changed.txt || true)
+              ;;
+            *)
+              echo "::error::Unknown branch prefix '$BRANCH'. Use codex/<issue>-description or claude/<issue>-description."
+              exit 1
+              ;;
+          esac
+          if [ -n "$forbidden" ]; then
+            echo "::error::Branch '$BRANCH' changes paths it does not own:"
+            echo "$forbidden"
+            exit 1
+          fi
+          echo "Ownership OK for $BRANCH"
+
+      - name: Detect changed areas
+        id: changes
+        run: |
+          set -euo pipefail
+          flag() { if grep -qE "$1" changed.txt; then echo "true"; else echo "false"; fi; }
+          {
+            echo "backend=$(flag '^app/backend/|^\.github/workflows/ci\.yml$')"
+            # Frontend checks run only once app/frontend exists.
+            if [ -f app/frontend/package.json ]; then
+              echo "frontend=$(flag '^app/frontend/|^\.github/workflows/ci\.yml$')"
+            else
+              echo "frontend=false"
+            fi
+            echo "infra=$(flag '^infra/|^\.github/workflows/ci\.yml$')"
+            echo "terraform=$(flag '^infra/terraform/|^\.github/workflows/ci\.yml$')"
+          } >> "$GITHUB_OUTPUT"
+
+  backend:
+    needs: ownership
+    if: needs.ownership.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Unit and integration tests (MongoDB via Testcontainers, WireMock); never the real provider.
+      - name: mvnw verify
+        run: ./mvnw --batch-mode --no-transfer-progress verify
+
+  frontend:
+    needs: ownership
+    if: needs.ownership.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm test
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  terraform:
+    needs: ownership
+    if: needs.ownership.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.16"
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive infra
+
+      # No backend and no credentials: syntax and provider schema only.
+      - name: terraform validate (bootstrap)
+        run: |
+          terraform -chdir=infra/bootstrap init -backend=false -input=false
+          terraform -chdir=infra/bootstrap validate
+
+      - name: terraform validate (main)
+        run: |
+          terraform -chdir=infra/terraform init -backend=false -input=false
+          terraform -chdir=infra/terraform validate
+
+  # Plan of infra/terraform as fb-tf-plan (read-only). The bootstrap is not planned in CI because
+  # fb-tf-plan has no billing permission for the budget (docs/contract.md section 5).
+  terraform-plan:
+    needs: [ownership, terraform]
+    # No plan for PRs from forks: they get no OIDC token for this repository's provider.
+    if: >-
+      needs.ownership.outputs.terraform == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: fb-tf-plan@flight-board-prg-2610.iam.gserviceaccount.com
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.16"
+          terraform_wrapper: false
+
+      - name: terraform init
+        run: terraform -chdir=infra/terraform init -input=false
+
+      - name: terraform plan
+        run: |
+          set -o pipefail
+          terraform -chdir=infra/terraform plan -input=false -no-color -lock-timeout=120s | tee plan.txt
+          {
+            echo "### terraform plan (infra/terraform)"
+            echo '```'
+            tail -c 60000 plan.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
