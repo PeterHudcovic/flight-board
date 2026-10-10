@@ -1,12 +1,13 @@
 * { box-sizing: border-box; }
-:root { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; color: #fff; background: #2e3a40; font-synthesis: none; }
-body { margin: 0; }
+:root { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; color: #fff; background: #090f14; font-synthesis: none; }
+body { margin: 0; padding: 8px; }
+.display-frame { height: calc(100dvh - 16px); padding: 8px; border: 1px solid #3b4852; border-radius: 14px; background: #151e25; box-shadow: 0 4px 12px #0008; }
 .board {
   --header-height: clamp(72px, 9.6dvh, 104px);
   --notice-height: 28px;
   --footer-height: clamp(36px, 4.1dvh, 44px);
   --column-height: clamp(48px, 6.2dvh, 68px);
-  position: relative; height: 100dvh; display: grid;
+  position: relative; height: 100%; display: grid; background: #2e3a40; border-radius: 4px;
   grid-template-rows: var(--header-height) var(--notice-height) minmax(0, 1fr) var(--footer-height);
 }
 .board-header { background: #00aeef; padding: 0 clamp(16px, 1.4vw, 28px); display: flex; justify-content: space-between; align-items: center; gap: 24px; }
@@ -15,22 +16,28 @@ h1 { margin: 0; font-size: clamp(26px, 2.5vw, 48px); font-weight: 500; letter-sp
 .notice { padding: 4px 16px; font-family: sans-serif; font-size: 14px; line-height: 20px; text-align: center; color: #fff; }
 .notice-visible { background: #674800; color: #fff3c1; }
 .blocks { min-height: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(6px, .5vw, 10px); }
-.flight-block { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: clamp(16px, 1.25vw, 24px); line-height: 1.1; }
-.column-0 { width: 11%; }
+.block-frame { min-width: 0; border: 1px solid #52616b; }
+.flight-block { width: 100%; height: 100%; border-collapse: collapse; table-layout: fixed; font-size: clamp(14.4px, 1.125vw, 21.6px); line-height: 1.1; }
+.column-0 { width: 12%; }
 .column-1 { width: 10%; }
-.column-2 { width: 30.5%; }
-.column-3 { width: 12%; }
-.column-4 { width: 7%; }
-.column-5 { width: 12.5%; }
-.column-6 { width: 17%; }
+.column-2 { width: 29%; }
+.column-3 { width: 11.5%; }
+.column-4 { width: 6.5%; }
+.column-5 { width: 13%; }
+.column-6 { width: 18%; }
 thead { background: #00aeef; }
 th { height: var(--column-height); text-align: left; font-weight: 500; font-size: 1.08em; white-space: nowrap; }
-td, th { padding: 0 2px; overflow: hidden; text-overflow: ellipsis; }
+td, th { padding: 0 4px; overflow: hidden; text-overflow: ellipsis; }
+td:first-child, th:first-child { padding-left: 8px; }
+th:first-child { padding-right: 2px; }
+td:last-child, th:last-child { padding-right: 8px; }
+td:nth-child(5), th:nth-child(5) { padding-left: 2px; padding-right: 2px; }
 th:nth-child(5), th:nth-child(6) { font-size: 1em; text-align: center; }
 th:nth-child(6) { letter-spacing: -.02em; }
 td:nth-child(6) { text-align: center; }
 .compact-heading { display: block; line-height: 1.05; }
-.flight-row { height: calc((100dvh - var(--header-height) - var(--notice-height) - var(--footer-height) - var(--column-height)) / 12); background: #2e3a40; }
+/* Reserve 34px for the outer frame and 2px for the block borders. */
+.flight-row { height: calc((100dvh - 36px - var(--header-height) - var(--notice-height) - var(--footer-height) - var(--column-height)) / 12); background: #2e3a40; }
 .flight-row:nth-child(even) { background: #006a98; }
 td { font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .destination { text-transform: uppercase; }
@@ -44,7 +51,8 @@ td { font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; 
 .board-footer a:focus-visible { outline: 2px solid #ffe000; outline-offset: 4px; }
 .empty-message { position: absolute; top: 45%; width: 100%; margin: 0; text-align: center; padding: 12px; font-size: 24px; }
 @media (max-width: 1279px), (max-height: 719px) {
-  .board { height: auto; min-height: 100dvh; grid-template-rows: auto var(--notice-height) auto var(--footer-height); }
+  .display-frame { height: auto; min-height: calc(100dvh - 16px); }
+  .board { height: auto; min-height: calc(100dvh - 34px); grid-template-rows: auto var(--notice-height) auto var(--footer-height); }
   .board-header { min-height: var(--header-height); padding-top: 12px; padding-bottom: 12px; }
   .blocks { grid-template-columns: 1fr; }
   .flight-block { font-size: clamp(18px, 2.2vw, 26px); height: auto; }

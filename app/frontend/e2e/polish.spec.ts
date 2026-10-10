@@ -39,7 +39,21 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 72
       const names = Array.from(document.querySelectorAll('.destination-text')).map(element => ({
         height: element.getBoundingClientRect().height, style: getComputedStyle(element),
       })).map(({ height, style }) => ({ height, lineHeight: Number.parseFloat(style.lineHeight), whiteSpace: style.whiteSpace }));
-      return { rows, tables, bottom: footer.bottom, headingRight: heading.right, clockLeft: clock.left,
+      const textRect = (cell: Element) => {
+        const range = document.createRange(); range.selectNodeContents(cell);
+        return range.getBoundingClientRect();
+      };
+      const spacing = Array.from(document.querySelectorAll('tbody tr')).filter(row => row.textContent).map(row => {
+        const cells = row.querySelectorAll('td');
+        const frame = row.closest('.block-frame')!.getBoundingClientRect();
+        return { left: textRect(cells[0]!).left - frame.left,
+          gap: cells[6]!.textContent ? textRect(cells[6]!).left - textRect(cells[5]!).right : null,
+          right: cells[6]!.textContent ? frame.right - textRect(cells[6]!).right : null };
+      });
+      const borders = Array.from(document.querySelectorAll('.block-frame')).map(frame => getComputedStyle(frame).borderLeftWidth);
+      const frame = document.querySelector('.display-frame')!.getBoundingClientRect();
+      const screen = document.querySelector('.board')!.getBoundingClientRect();
+      return { spacing, borders, bezel: screen.left - frame.left, rows, tables, bottom: footer.bottom, headingRight: heading.right, clockLeft: clock.left,
         width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight, clipped, names };
     });
     expect(geometry.width).toBe(viewport.width); expect(geometry.height).toBe(viewport.height);
@@ -48,6 +62,13 @@ for (const viewport of [{ width: 1920, height: 1080 }, { width: 1280, height: 72
     expect(Math.max(...geometry.rows) - Math.min(...geometry.rows)).toBeLessThan(1);
     expect(new Set(geometry.tables).size).toBe(1);
     expect(geometry.clipped).toEqual([]);
+    expect(geometry.bezel).toBeGreaterThanOrEqual(8);
+    expect(geometry.borders).toEqual(['1px', '1px', '1px']);
+    for (const spacing of geometry.spacing) {
+      expect(spacing.left).toBeGreaterThanOrEqual(8);
+      if (spacing.gap !== null) expect(spacing.gap).toBeGreaterThanOrEqual(8);
+      if (spacing.right !== null) expect(spacing.right).toBeGreaterThanOrEqual(8);
+    }
     expect(geometry.names.every(name => name.whiteSpace === 'nowrap' && name.height <= name.lineHeight + 1)).toBe(true);
     await expect(page).toHaveScreenshot('board-' + viewport.width + 'x' + viewport.height + '.png',
       { animations: 'disabled', maxDiffPixelRatio: .001 });

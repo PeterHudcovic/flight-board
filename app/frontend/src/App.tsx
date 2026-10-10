@@ -28,17 +28,17 @@ export default function App() {
   const flights = orderedFlights(state.board);
   const message = statusText(state);
   const title = boardConfig.airportName + ' (' + boardConfig.airportCode + ') · DEPARTURES · TERMINAL ' + boardConfig.terminal;
-  return <main className="board" aria-label={boardConfig.airportName + ' departure board'}>
+  return <div className="display-frame"><main className="board" aria-label={boardConfig.airportName + ' departure board'}>
     <header className="board-header"><h1>{title}</h1><time className="clock" aria-label="Prague time">{clockText(state.now)}</time></header>
     <div className={'notice' + (message ? ' notice-visible' : '')} role="status" aria-live="polite">
       {message || '\u00a0'}
     </div>
     <div className="blocks">
-      {[0, 1, 2].map(block => <table className="flight-block" key={block} aria-label={'Departures ' + (block * 12 + 1) + ' to ' + ((block + 1) * 12)}>
+      {[0, 1, 2].map(block => <div className="block-frame" key={block}><table className="flight-block" aria-label={'Departures ' + (block * 12 + 1) + ' to ' + ((block + 1) * 12)}>
         <colgroup>{columns.map((column, index) => <col className={'column-' + index} key={column} />)}</colgroup>
         <thead><tr>{columns.map(column => <th scope="col" key={column} aria-label={column}>{column === 'Bag Drop' ? <><span className="compact-heading">Bag</span><span className="compact-heading">Drop</span></> : column}</th>)}</tr></thead>
         <tbody>{Array.from({ length: 12 }, (_, row) => <Row key={row} flight={flights[block * 12 + row]} />)}</tbody>
-      </table>)}
+      </table></div>)}
     </div>
     {state.board && flights.length === 0 && <p className="empty-message">No departures in the next hours</p>}
     <footer className="board-footer">
@@ -47,5 +47,5 @@ export default function App() {
         : '\u00a0'}</span>
       <a href="https://aerodatabox.com/" target="_blank" rel="noopener noreferrer">data: AeroDataBox</a>
     </footer>
-  </main>;
+  </main></div>;
 }
