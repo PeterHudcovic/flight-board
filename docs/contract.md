@@ -337,9 +337,12 @@ maps each of them explicitly to its Spring property (Spring's relaxed binding do
   simulator (e.g. WireMock) and a dummy key. They verify the request (path, query, RapidAPI
   headers) and the handling of 200, 429, 500, timeout and invalid JSON. Tests never contact the
   provider and never use quota.
-- Quota (RapidAPI Basic plan, 400 units per month): the environment runs about 90 hours and is
-  then deleted. 90 h × 2 fetches per hour = 180 calls × 2 units = 360 units, leaving 40 units
-  (about 20 manual Fetch now). A longer run or a shorter interval needs a bigger plan.
+- Quota (RapidAPI Basic plan, 400 units per month, 2 units per call): the GKE deployment uses
+  `FLIGHTBOARD_FETCH_INTERVAL=PT6H` (4 calls per day = 8 units per day). The environment runs
+  until the end of the GCP trial (2026-10-28) and is then deleted. A full month at `PT6H` is
+  about 124 calls = 248 units; at `PT4H` about 186 calls = 372 units. Before changing the
+  interval, check the units already used in the RapidAPI dashboard; a shorter interval or a
+  longer run may need a bigger plan.
 
 ## 8. Source data
 
